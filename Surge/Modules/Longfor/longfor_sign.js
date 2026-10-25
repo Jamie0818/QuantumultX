@@ -1,6 +1,7 @@
 /*
  * 龙湖天街自动签到（Surge）
- * - http-request：从用户本人发起的龙湖任务请求中保存必要凭证
+ * - http-response：从 key2token 登录响应中保存当前账号 Token
+ * - http-request：从任务请求头或请求体中补充风控凭证
  * - cron：复用已保存凭证执行每日签到
  * - 不上传凭证，不自动破解滑块验证码
  */
@@ -41,48 +42,110 @@ function compact(value) {
   }
 }
 
-function captureRequest() {
-  const headers = $request.headers || {};
-  const body = safeJson($request.body || "{}", {});
-  const token = getHeader(headers, "X-LF-UserToken") || getHeader(headers, "token");
-  const dxriskToken = getHeader(headers, "X-LF-DXRisk-Token");
+function normalizeKey(value) {
+  return String(value || "").toLowerCase().replace(/[-_]/g, "");
+}
 
-  if (!token) {
-    // 同一任务域名下部分静态/公共请求不带登录 Token，安静放行即可。
-    $done({});
-    return;
+function findStringByKeys(value, acceptedKeys, depth) {
+  if (depth > 8 || value === null || value === undefined) return "";
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && trimmed.length < 200000) {
+      const nested = safeJson(trimmed, null);
+      if (nested) return findStringByKeys(nested, acceptedKeys, depth + 1);
+    }
+    return "";
   }
+  if (typeof value !== "object") return "";
 
+  for (const [key, child] of Object.entries(value)) {
+    if (
+      acceptedKeys.includes(normalizeKey(key)) &&
+      typeof child === "string" &&
+      child.trim().length >= 16
+    ) {
+      return child.trim();
+    }
+  }
+  for (const child of Object.values(value)) {
+    const found = findStringByKeys(child, acceptedKeys, depth + 1);
+    if (found) return found;
+  }
+  return "";
+}
+
+function saveCredentials(token, dxriskToken, headers, body, sourceUrl) {
   const previous = safeJson($persistentStore.read(STORE_KEY) || "{}", {});
+  const finalToken = token || previous.token || "";
+  if (!finalToken) return false;
+
   const record = {
-    token,
+    token: finalToken,
     dxriskToken: dxriskToken || previous.dxriskToken || "",
-    activityNo: body.activity_no || previous.activityNo || DEFAULT_ACTIVITY_NO,
+    activityNo: body.activity_no || body.activityNo || previous.activityNo || DEFAULT_ACTIVITY_NO,
     userAgent: getHeader(headers, "User-Agent") || previous.userAgent || "",
     apiKey: getHeader(headers, "X-GAIA-API-KEY") || previous.apiKey || DEFAULT_API_KEY,
     buCode: getHeader(headers, "X-LF-Bu-Code") || previous.buCode || "C20400",
     channel: getHeader(headers, "X-LF-Channel") || previous.channel || "C2",
     riskSource: getHeader(headers, "X-LF-DXRisk-Source") || previous.riskSource || "5",
-    sourceUrl: $request.url || "",
+    sourceUrl: sourceUrl || previous.sourceUrl || "",
     capturedAt: new Date().toISOString()
   };
 
   const written = $persistentStore.write(JSON.stringify(record), STORE_KEY);
-  if (written) {
-    const changed =
-      previous.token !== record.token ||
-      previous.dxriskToken !== record.dxriskToken;
-    if (changed) {
-      notify(
-        previous.token ? "凭证已更新" : "凭证已保存",
-        record.dxriskToken
-          ? "登录 Token 与风控 Token 已保存，定时签到已经就绪。"
-          : "登录 Token 已保存，但未发现风控 Token；可先尝试签到，失败时重新进入签到页。"
-      );
-    }
-  } else {
+  if (!written) {
     notify("保存失败", "Surge 无法写入本地凭证，请检查脚本日志。 ");
+    return false;
   }
+
+  const changed =
+    previous.token !== record.token ||
+    previous.dxriskToken !== record.dxriskToken;
+  if (changed) {
+    notify(
+      previous.token ? "凭证已更新" : "凭证已保存",
+      record.dxriskToken
+        ? "登录 Token 与风控 Token 已保存，定时签到已经就绪。"
+        : "登录 Token 已保存；如签到触发风控，请进入签到页完成一次验证。"
+    );
+  }
+  return true;
+}
+
+function captureResponse() {
+  const requestHeaders = ($request && $request.headers) || {};
+  const responseHeaders = ($response && $response.headers) || {};
+  const body = safeJson(($response && $response.body) || "", {});
+  const tokenKeys = ["token", "usertoken", "xlfusertoken", "lfusertoken", "accesstoken"];
+  const dxriskKeys = ["dxrisktoken", "xlfdxrisktoken"];
+  const token =
+    getHeader(responseHeaders, "X-LF-UserToken") ||
+    getHeader(responseHeaders, "token") ||
+    findStringByKeys(body, tokenKeys, 0);
+  const dxriskToken =
+    getHeader(responseHeaders, "X-LF-DXRisk-Token") ||
+    findStringByKeys(body, dxriskKeys, 0);
+
+  saveCredentials(token, dxriskToken, requestHeaders, body, $request.url || "");
+  $done({});
+}
+
+function captureRequest() {
+  const headers = $request.headers || {};
+  const body = safeJson($request.body || "{}", {});
+  const token =
+    getHeader(headers, "X-LF-UserToken") ||
+    getHeader(headers, "token") ||
+    findStringByKeys(body, ["token", "usertoken", "xlfusertoken", "lfusertoken", "accesstoken"], 0);
+  const dxriskToken =
+    getHeader(headers, "X-LF-DXRisk-Token") ||
+    findStringByKeys(body, ["dxrisktoken", "xlfdxrisktoken"], 0);
+
+  if (!token) {
+    $done({});
+    return;
+  }
+  saveCredentials(token, dxriskToken, headers, body, $request.url || "");
   $done({});
 }
 
@@ -151,7 +214,9 @@ function runSign() {
   );
 }
 
-if (typeof $request !== "undefined") {
+if (typeof $response !== "undefined") {
+  captureResponse();
+} else if (typeof $request !== "undefined") {
   captureRequest();
 } else {
   runSign();
