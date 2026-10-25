@@ -4,7 +4,7 @@
 
 在 Surge 的“模块”中添加下面的 URL：
 
-`https://raw.githubusercontent.com/Jamie0818/QuantumultX/master/Surge/Modules/Longfor/Longfor_Auto_Sign.sgmodule`
+`https://raw.githubusercontent.com/Jamie0818/QuantumultX/master/Surge/Modules/Longfor/Longfor_Auto_Sign_v1.1.sgmodule`
 
 启用模块并确认 MITM 证书已安装和信任。首次使用时，打开微信“龙湖天街”小程序并进入任务/签到页面；必要时手动签到一次。收到“凭证已保存”通知后，模块会在每天手机本地时间 09:18 自动签到。
 
