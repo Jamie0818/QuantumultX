@@ -1,6 +1,6 @@
 /*
  * 龙湖天街自动签到（Surge）
- * - http-request：从用户本人发起的签到请求中保存必要凭证
+ * - http-request：从用户本人发起的龙湖任务请求中保存必要凭证
  * - cron：复用已保存凭证执行每日签到
  * - 不上传凭证，不自动破解滑块验证码
  */
@@ -48,7 +48,7 @@ function captureRequest() {
   const dxriskToken = getHeader(headers, "X-LF-DXRisk-Token");
 
   if (!token) {
-    notify("凭证未获取", "签到请求中没有登录 Token，请确认已登录龙湖天街小程序。 ");
+    // 同一任务域名下部分静态/公共请求不带登录 Token，安静放行即可。
     $done({});
     return;
   }
@@ -63,17 +63,23 @@ function captureRequest() {
     buCode: getHeader(headers, "X-LF-Bu-Code") || previous.buCode || "C20400",
     channel: getHeader(headers, "X-LF-Channel") || previous.channel || "C2",
     riskSource: getHeader(headers, "X-LF-DXRisk-Source") || previous.riskSource || "5",
+    sourceUrl: $request.url || "",
     capturedAt: new Date().toISOString()
   };
 
   const written = $persistentStore.write(JSON.stringify(record), STORE_KEY);
   if (written) {
-    notify(
-      "凭证已保存",
-      record.dxriskToken
-        ? "登录 Token 与风控 Token 已更新，定时签到已经就绪。"
-        : "登录 Token 已保存，但未发现风控 Token；可先尝试签到，失败时重新进入签到页。"
-    );
+    const changed =
+      previous.token !== record.token ||
+      previous.dxriskToken !== record.dxriskToken;
+    if (changed) {
+      notify(
+        previous.token ? "凭证已更新" : "凭证已保存",
+        record.dxriskToken
+          ? "登录 Token 与风控 Token 已保存，定时签到已经就绪。"
+          : "登录 Token 已保存，但未发现风控 Token；可先尝试签到，失败时重新进入签到页。"
+      );
+    }
   } else {
     notify("保存失败", "Surge 无法写入本地凭证，请检查脚本日志。 ");
   }
