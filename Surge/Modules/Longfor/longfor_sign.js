@@ -46,6 +46,42 @@ function normalizeKey(value) {
   return String(value || "").toLowerCase().replace(/[-_]/g, "");
 }
 
+function cleanToken(value) {
+  const text = String(value || "").trim();
+  return text.replace(/^Bearer\s+/i, "");
+}
+
+function findHeaderAuthToken(headers) {
+  if (!headers) return "";
+  for (const [key, value] of Object.entries(headers)) {
+    const normalized = normalizeKey(key);
+    if (
+      ((normalized.includes("token") && !normalized.includes("dxrisk") && !normalized.includes("captcha")) ||
+        normalized === "authorization") &&
+      cleanToken(value).length >= 16
+    ) {
+      return cleanToken(value);
+    }
+  }
+  return "";
+}
+
+function findHeaderDxRiskToken(headers) {
+  if (!headers) return "";
+  for (const [key, value] of Object.entries(headers)) {
+    const normalized = normalizeKey(key);
+    if (
+      normalized.includes("dxrisk") &&
+      normalized.includes("token") &&
+      !normalized.includes("captcha") &&
+      cleanToken(value).length >= 16
+    ) {
+      return cleanToken(value);
+    }
+  }
+  return "";
+}
+
 function findStringByKeys(value, acceptedKeys, depth) {
   if (depth > 8 || value === null || value === undefined) return "";
   if (typeof value === "string") {
@@ -121,9 +157,17 @@ function captureResponse() {
   const token =
     getHeader(responseHeaders, "X-LF-UserToken") ||
     getHeader(responseHeaders, "token") ||
-    findStringByKeys(body, tokenKeys, 0);
+    findHeaderAuthToken(responseHeaders) ||
+    findStringByKeys(body, tokenKeys, 0) ||
+    (typeof body.data === "string" && body.data.trim().length >= 16
+      ? cleanToken(body.data)
+      : "") ||
+    (typeof body.result === "string" && body.result.trim().length >= 16
+      ? cleanToken(body.result)
+      : "");
   const dxriskToken =
     getHeader(responseHeaders, "X-LF-DXRisk-Token") ||
+    findHeaderDxRiskToken(responseHeaders) ||
     findStringByKeys(body, dxriskKeys, 0);
 
   saveCredentials(token, dxriskToken, requestHeaders, body, $request.url || "");
@@ -136,9 +180,11 @@ function captureRequest() {
   const token =
     getHeader(headers, "X-LF-UserToken") ||
     getHeader(headers, "token") ||
+    findHeaderAuthToken(headers) ||
     findStringByKeys(body, ["token", "usertoken", "xlfusertoken", "lfusertoken", "accesstoken"], 0);
   const dxriskToken =
     getHeader(headers, "X-LF-DXRisk-Token") ||
+    findHeaderDxRiskToken(headers) ||
     findStringByKeys(body, ["dxrisktoken", "xlfdxrisktoken"], 0);
 
   if (!token) {
