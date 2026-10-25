@@ -1,0 +1,22 @@
+#!name=龙湖天街自动签到
+#!desc=从龙湖 key2token 登录响应自动获取当前账号凭证，每天 09:18 签到；仅在必要接口启用脚本。不上传凭证，不破解验证码。
+#!author=Codex 定制
+#!category=签到
+#!system=ios
+#!date=2026-10-25
+#!version=1.3.0
+#!homepage=https://github.com/Jamie0818/QuantumultX/tree/master/Surge/Modules/Longfor
+
+[General]
+force-http-engine-hosts = %APPEND% gw2c-hw-open.longfor.com:443, longzhu.longfor.com:443
+
+[Rule]
+AND,((PROTOCOL,UDP),(DOMAIN-SUFFIX,longfor.com)),REJECT
+
+[Script]
+龙湖登录凭证获取 = type=http-response, pattern=^https:\/\/longzhu\.longfor\.com\/proxy\/lmember-auth-api-prod-open\/api\/auth\/v1\/key2token(?:\?|$), requires-body=true, max-size=65536, script-path=https://raw.githubusercontent.com/Jamie0818/QuantumultX/master/Surge/Modules/Longfor/longfor_sign.js?v=1.3.0, timeout=10
+龙湖任务凭证补充 = type=http-request, pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/(?:lmarketing-task-api-mvc-prod\/openapi\/task\/|llt-gateway-prod\/api\/v1\/activity\/), requires-body=true, max-size=65536, script-path=https://raw.githubusercontent.com/Jamie0818/QuantumultX/master/Surge/Modules/Longfor/longfor_sign.js?v=1.3.0, timeout=10
+龙湖天街每日签到 = type=cron, cronexp="18 9 * * *", wake-system=true, script-path=https://raw.githubusercontent.com/Jamie0818/QuantumultX/master/Surge/Modules/Longfor/longfor_sign.js?v=1.3.0, timeout=25
+
+[MITM]
+hostname = %APPEND% gw2c-hw-open.longfor.com, longzhu.longfor.com
