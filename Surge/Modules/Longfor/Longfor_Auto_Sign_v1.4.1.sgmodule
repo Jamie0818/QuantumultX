@@ -1,0 +1,26 @@
+#!name=龙湖天街自动签到 v1.4.1
+#!desc=保存用户本人发起的龙湖签到请求；支持首页面板手动签到及每天 09:18 自动签到。敏感数据仅保存在本机 Surge。
+#!author=Codex 定制
+#!category=签到
+#!system=ios
+#!date=2026-10-25
+#!version=1.4.1
+#!homepage=https://github.com/Jamie0818/QuantumultX/tree/master/Surge/Modules/Longfor
+
+[General]
+force-http-engine-hosts = %APPEND% gw2c-hw-open.longfor.com:443, longzhu.longfor.com:443
+
+[Rule]
+AND,((PROTOCOL,UDP),(DOMAIN-SUFFIX,longfor.com)),REJECT
+
+[Script]
+龙湖登录凭证补充 = type=http-response, pattern=^https:\/\/longzhu\.longfor\.com\/proxy\/lmember-auth-api-prod-open\/api\/auth\/v1\/key2token(?:\?|$), requires-body=true, max-size=65536, script-path=https://raw.githubusercontent.com/Jamie0818/QuantumultX/master/Surge/Modules/Longfor/longfor_sign.js?v=1.4.1, timeout=10
+龙湖签到请求保存 = type=http-request, pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/lmarketing-task-api-mvc-prod\/openapi\/task\/v1\/signature\/clock(?:\?|$), requires-body=true, max-size=65536, script-path=https://raw.githubusercontent.com/Jamie0818/QuantumultX/master/Surge/Modules/Longfor/longfor_sign.js?v=1.4.1, timeout=10
+龙湖天街手动签到 = type=generic, script-path=https://raw.githubusercontent.com/Jamie0818/QuantumultX/master/Surge/Modules/Longfor/longfor_sign.js?v=1.4.1, timeout=25
+龙湖天街每日签到 = type=cron, cronexp="18 9 * * *", wake-system=true, script-path=https://raw.githubusercontent.com/Jamie0818/QuantumultX/master/Surge/Modules/Longfor/longfor_sign.js?v=1.4.1, timeout=25
+
+[Panel]
+龙湖天街签到 = title="龙湖天街签到", content="点击右上角刷新按钮手动签到", style=info, script-name=龙湖天街手动签到
+
+[MITM]
+hostname = %APPEND% gw2c-hw-open.longfor.com, longzhu.longfor.com
