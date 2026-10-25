@@ -82,6 +82,26 @@ function findHeaderDxRiskToken(headers) {
   return "";
 }
 
+function sanitizeReplayHeaders(headers) {
+  const blocked = [
+    "host",
+    "contentlength",
+    "connection",
+    "proxyconnection",
+    "transferencoding",
+    "acceptencoding",
+    ":method",
+    ":scheme",
+    ":authority",
+    ":path"
+  ];
+  const output = {};
+  for (const [key, value] of Object.entries(headers || {})) {
+    if (!blocked.includes(normalizeKey(key))) output[key] = value;
+  }
+  return output;
+}
+
 function findStringByKeys(value, acceptedKeys, depth) {
   if (depth > 8 || value === null || value === undefined) return "";
   if (typeof value === "string") {
@@ -148,6 +168,43 @@ function saveCredentials(token, dxriskToken, headers, body, sourceUrl) {
   return true;
 }
 
+function saveReplayRequest(token, dxriskToken, headers, bodyText, sourceUrl) {
+  const previous = safeJson($persistentStore.read(STORE_KEY) || "{}", {});
+  const body = safeJson(bodyText || "{}", {});
+  const replayHeaders = sanitizeReplayHeaders(headers);
+  const replayBody = bodyText || JSON.stringify({
+    activity_no: previous.activityNo || DEFAULT_ACTIVITY_NO
+  });
+  const record = {
+    ...previous,
+    token: token || previous.token || "",
+    dxriskToken: dxriskToken || previous.dxriskToken || "",
+    activityNo: body.activity_no || body.activityNo || previous.activityNo || DEFAULT_ACTIVITY_NO,
+    userAgent: getHeader(headers, "User-Agent") || previous.userAgent || "",
+    apiKey: getHeader(headers, "X-GAIA-API-KEY") || previous.apiKey || DEFAULT_API_KEY,
+    buCode: getHeader(headers, "X-LF-Bu-Code") || previous.buCode || "C20400",
+    channel: getHeader(headers, "X-LF-Channel") || previous.channel || "C2",
+    riskSource: getHeader(headers, "X-LF-DXRisk-Source") || previous.riskSource || "5",
+    replayHeaders,
+    replayBody,
+    sourceUrl,
+    capturedAt: new Date().toISOString()
+  };
+  const firstReplay = !previous.replayHeaders;
+  const changed =
+    JSON.stringify(previous.replayHeaders || {}) !== JSON.stringify(replayHeaders) ||
+    previous.replayBody !== replayBody;
+  const written = $persistentStore.write(JSON.stringify(record), STORE_KEY);
+  if (!written) {
+    notify("保存失败", "Surge 无法保存签到请求，请检查脚本日志。 ");
+    return false;
+  }
+  if (firstReplay || changed) {
+    notify("签到请求已保存", "定时任务已就绪；请求头和请求体仅保存在本机 Surge。 ");
+  }
+  return true;
+}
+
 function captureResponse() {
   const requestHeaders = ($request && $request.headers) || {};
   const responseHeaders = ($response && $response.headers) || {};
@@ -176,7 +233,8 @@ function captureResponse() {
 
 function captureRequest() {
   const headers = $request.headers || {};
-  const body = safeJson($request.body || "{}", {});
+  const bodyText = $request.body || "";
+  const body = safeJson(bodyText || "{}", {});
   const token =
     getHeader(headers, "X-LF-UserToken") ||
     getHeader(headers, "token") ||
@@ -186,6 +244,12 @@ function captureRequest() {
     getHeader(headers, "X-LF-DXRisk-Token") ||
     findHeaderDxRiskToken(headers) ||
     findStringByKeys(body, ["dxrisktoken", "xlfdxrisktoken"], 0);
+
+  if (/\/signature\/clock(?:\?|$)/.test($request.url || "")) {
+    saveReplayRequest(token, dxriskToken, headers, bodyText, $request.url || SIGN_URL);
+    $done({});
+    return;
+  }
 
   if (!token) {
     $done({});
@@ -197,32 +261,36 @@ function captureRequest() {
 
 function runSign() {
   const record = safeJson($persistentStore.read(STORE_KEY) || "", null);
-  if (!record || !record.token) {
-    notify("尚未配置", "请先打开龙湖天街微信小程序，手动签到一次以获取凭证。 ");
+  if (!record || (!record.token && !record.replayHeaders)) {
+    notify("尚未配置", "请先打开龙湖天街微信小程序，手动签到一次以保存签到请求。 ");
     $done();
     return;
   }
 
-  const headers = {
-    Accept: "application/json, text/plain, */*",
-    "Content-Type": "application/json;charset=UTF-8",
-    Origin: "https://longzhu.longfor.com",
-    Referer: "https://longzhu.longfor.com/",
-    "User-Agent": record.userAgent || "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 MicroMessenger miniProgram",
-    token: record.token,
-    "X-LF-UserToken": record.token,
-    "X-GAIA-API-KEY": record.apiKey || DEFAULT_API_KEY,
-    "X-LF-Bu-Code": record.buCode || "C20400",
-    "X-LF-Channel": record.channel || "C2",
-    "X-LF-DXRisk-Source": record.riskSource || "5"
-  };
-  if (record.dxriskToken) headers["X-LF-DXRisk-Token"] = record.dxriskToken;
+  const headers = record.replayHeaders
+    ? sanitizeReplayHeaders(record.replayHeaders)
+    : {
+        Accept: "application/json, text/plain, */*",
+        "Content-Type": "application/json;charset=UTF-8",
+        Origin: "https://longzhu.longfor.com",
+        Referer: "https://longzhu.longfor.com/",
+        "User-Agent": record.userAgent || "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 MicroMessenger miniProgram",
+        token: record.token,
+        "X-LF-UserToken": record.token,
+        "X-GAIA-API-KEY": record.apiKey || DEFAULT_API_KEY,
+        "X-LF-Bu-Code": record.buCode || "C20400",
+        "X-LF-Channel": record.channel || "C2",
+        "X-LF-DXRisk-Source": record.riskSource || "5"
+      };
+  if (!record.replayHeaders && record.dxriskToken) {
+    headers["X-LF-DXRisk-Token"] = record.dxriskToken;
+  }
 
   $httpClient.post(
     {
       url: SIGN_URL,
       headers,
-      body: JSON.stringify({ activity_no: record.activityNo || DEFAULT_ACTIVITY_NO }),
+      body: record.replayBody || JSON.stringify({ activity_no: record.activityNo || DEFAULT_ACTIVITY_NO }),
       timeout: 15,
       "auto-cookie": false
     },
