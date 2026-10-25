@@ -15,6 +15,19 @@ function notify(subtitle, body) {
   $notification.post("龙湖天街", subtitle, body, { "auto-dismiss": true });
 }
 
+function finishRun(subtitle, body, style) {
+  notify(subtitle, body);
+  if (typeof $script !== "undefined" && $script.type === "generic") {
+    $done({
+      title: "龙湖天街签到",
+      content: `${subtitle}\n${body}`,
+      style: style || "info"
+    });
+  } else {
+    $done();
+  }
+}
+
 function getHeader(headers, name) {
   if (!headers) return "";
   const key = Object.keys(headers).find(
@@ -262,8 +275,7 @@ function captureRequest() {
 function runSign() {
   const record = safeJson($persistentStore.read(STORE_KEY) || "", null);
   if (!record || (!record.token && !record.replayHeaders)) {
-    notify("尚未配置", "请先打开龙湖天街微信小程序，手动签到一次以保存签到请求。 ");
-    $done();
+    finishRun("尚未配置", "请先打开龙湖天街微信小程序，手动签到一次以保存签到请求。", "warning");
     return;
   }
 
@@ -296,16 +308,14 @@ function runSign() {
     },
     (error, response, data) => {
       if (error) {
-        notify("签到失败", `网络错误：${error}`);
-        $done();
+        finishRun("签到失败", `网络错误：${error}`, "error");
         return;
       }
 
       const status = response && response.status;
       const result = safeJson(data || "", null);
       if (!result) {
-        notify("签到失败", `服务器返回非 JSON 内容（HTTP ${status || "未知"}）。`);
-        $done();
+        finishRun("签到失败", `服务器返回非 JSON 内容（HTTP ${status || "未知"}）。`, "error");
         return;
       }
 
@@ -313,17 +323,16 @@ function runSign() {
       const message = String(result.message || result.msg || "");
       if (code === "0000" || code === "0") {
         const reward = result.data && result.data.reward_info;
-        notify("签到成功", `奖励：${compact(reward)}${message ? `\n${message}` : ""}`);
+        finishRun("签到成功", `奖励：${compact(reward)}${message ? `\n${message}` : ""}`, "success");
       } else if (/已签到|重复签到|今日已/.test(message)) {
-        notify("今日已签到", message);
+        finishRun("今日已签到", message, "info");
       } else if (code === "8040012" || code === "8040016" || /验证|滑块|人机/.test(message)) {
-        notify("需要人工验证", "请进入龙湖天街小程序完成一次滑块或手动签到，模块会自动刷新凭证。 ");
+        finishRun("需要人工验证", "请进入龙湖天街小程序完成一次滑块或手动签到，模块会自动刷新凭证。", "warning");
       } else if (status === 401 || /登录|token|Token|授权|过期/.test(message)) {
-        notify("登录凭证失效", "请重新进入龙湖天街小程序并手动签到一次。 ");
+        finishRun("登录凭证失效", "请重新进入龙湖天街小程序并手动签到一次。", "error");
       } else {
-        notify("签到未成功", `代码：${code || status || "未知"}\n${message || compact(result)}`);
+        finishRun("签到未成功", `代码：${code || status || "未知"}\n${message || compact(result)}`, "error");
       }
-      $done();
     }
   );
 }
