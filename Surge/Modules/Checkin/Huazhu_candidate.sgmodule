@@ -1,0 +1,11 @@
+#!name=华住会签到（候选·待测试）
+#!desc=旧版脚本标注仅 QX 测试；需验证 Surge 与酒店会员签到资格，首次不要直接启用。
+#!system=ios
+#!category=签到
+
+[Script]
+华住会_获取Token = type=http-request, pattern=^https?:\/\/hweb-personalcenter\.huazhu\.com\/login\/autoLogin$, script-path=https://raw.githubusercontent.com/jivei/Surge/main/js/hzh.js, timeout=30
+华住会_每日签到_待测试 = type=cron, cronexp="1 0 * * *", wake-system=true, timeout=40, script-path=https://raw.githubusercontent.com/jivei/Surge/main/js/hzh.js
+
+[MITM]
+hostname = %APPEND% hweb-personalcenter.huazhu.com
