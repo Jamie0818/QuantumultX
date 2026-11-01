@@ -66,6 +66,7 @@
       if(service==="jd"){
         var c=header(h,"cookie");
         if(/(?:^|;\s*)pt_key=[^;]+/.test(c)&&/(?:^|;\s*)pt_pin=[^;]+/.test(c)) {
+          if(read("checkin_v2_jd_cookie")===c)return end();
           if(write("checkin_v2_jd_cookie",c))return captureOk("京东 Cookie 已保存");
         }
         return end();
@@ -88,6 +89,7 @@
       }
       if(service==="huazhu"){
         var tk=header(h,"user-token");
+        if(tk&&read("HZH_Token")===tk)return end();
         if(tk&&write("HZH_Token",tk))return captureOk("华住会会员 Token 已保存");
         return end();
       }
