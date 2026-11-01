@@ -21,6 +21,8 @@ function nonempty(v) {
   return typeof v === "string" ? v.trim().length > 0 : !!v;
 }
 function jdSaved() {
+  var current = stored("checkin_v2_jd_cookie");
+  if (current.indexOf("pt_key=") !== -1 && current.indexOf("pt_pin=") !== -1) return true;
   var multi = parse(stored("CookiesJD"));
   if (Array.isArray(multi) && multi.some(function (x) {
     var c = String((x && x.cookie) || "");
@@ -32,6 +34,8 @@ function jdSaved() {
   });
 }
 function biliSaved() {
+  var recent = stored("checkin_v2_bili_cookie");
+  if (recent.indexOf("DedeUserID=")!==-1 && recent.indexOf("SESSDATA=")!==-1 && recent.indexOf("bili_jct=")!==-1) return true;
   var data = parse(stored("bilibili_daily_bonus")) || {};
   var c = data.cookie || {};
   var raw = data.cookieStr || "";
@@ -56,7 +60,7 @@ function ccbStatus() {
   return "未检测到";
 }
 function chageeStatus() {
-  var a = nonempty(stored("bw_token"));
+  var a = nonempty(stored("bw_token")) || nonempty(stored("checkin_v2_chagee"));
   var b = nonempty(stored("bw_body"));
   return a && b ? "Token及请求体已存" : (a || b ? "只存了部分凭证" : "未检测到");
 }
